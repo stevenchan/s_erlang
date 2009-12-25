@@ -101,8 +101,9 @@ delete_db(Settings) ->
 %%--------------------------------------------------------------------
 create(Settings, Id, Doc) ->
     Result = request(Settings, put, Id, Doc),
+    {_Doc, Revision} = doc_rev(Result),
     case status_code(Result) of
-        201 -> {ok, revision(Result), Doc};
+        201 -> {ok, Revision, Doc};
         404 -> {error, no_exists};
         409 -> {error, already_exists};
         {error, Reason} -> {error, Reason}
@@ -115,8 +116,9 @@ create(Settings, Id, Doc) ->
 %%--------------------------------------------------------------------
 update(Settings, Id, Doc, Revision) ->
     Result = request(Settings, put, Id, [{"_rev", Revision}|Doc]),
+    {_Doc, NewRevision} = doc_rev(Result),
     case status_code(Result) of
-        201 -> {ok, revision(Result), Doc};
+        201 -> {ok, NewRevision, Doc};
         409 -> {error, revision};
         {error, Reason} -> {error, Reason}
     end.
@@ -128,8 +130,9 @@ update(Settings, Id, Doc, Revision) ->
 %%--------------------------------------------------------------------
 get(Settings, Id) ->
     Result = request(Settings, get, Id),
+    {Doc, Revision} = doc_rev(Result),
     case status_code(Result) of
-        200 -> {ok, revision(Result), doc(Result)};
+        200 -> {ok, Revision, Doc};
         404 -> {error, no_exists}
     end.
 
@@ -215,25 +218,18 @@ doc_to_json(Doc) ->
     lists:append(["{", string:join(KeyValues, ","), "}"]).
 
 %%--------------------------------------------------------------------
-%% @spec revision(HttpRequestResult) -> string()
+%% @spec doc_rev(HttpRequestResult) -> {Doc, Rev}
 %% @doc 
 %% @end
 %%--------------------------------------------------------------------
-revision(HttpRequestResult) ->
+doc_rev(HttpRequestResult) ->
     {ok, {_, _, ResultBody}} =  HttpRequestResult,
-    case proplists:get_value("rev", parse_body(ResultBody)) of
-        undefined -> proplists:get_value("_rev", parse_body(ResultBody));
-        Rev -> Rev
-    end.
-
-%%--------------------------------------------------------------------
-%% @spec doc(HttpRequestResult) -> proplist()
-%% @doc 
-%% @end
-%%--------------------------------------------------------------------
-doc(HttpRequestResult) ->
-    {ok, {{_, _, _}, _, ResultBody}} =  HttpRequestResult,
-    proplists:delete("_id", proplists:delete("_rev", parse_body(ResultBody))).
+    Parsed = parse_body(ResultBody),
+    case proplists:get_value("rev", Parsed) of
+        undefined -> Rev = proplists:get_value("_rev", Parsed);
+        Rev       -> do_nothing
+    end,
+    {proplists:delete("_id", proplists:delete("_rev", Parsed)), Rev}.
 
 %%--------------------------------------------------------------------
 %% @spec parse_body(ResultBody) -> proplist()
